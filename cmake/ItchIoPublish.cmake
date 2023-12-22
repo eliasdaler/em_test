@@ -10,5 +10,5 @@ function (add_itch_io_publish_target target_name itch_path)
     COMMAND butler push --if-changed  ${site_dir} ${ITCH_USERNAME}/${itch_path}:web
     USES_TERMINAL
   )
-  add_dependencies(itch_push_${target_name} bundle_website_dir_${target_name})
+  add_dependencies(itch_push_${target_name} ${target_name})
 endfunction()
