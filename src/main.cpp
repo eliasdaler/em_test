@@ -17,6 +17,7 @@ public:
             printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
             std::exit(1);
         }
+        printf("Hello, world!\n");
         // Create window
         auto* window = SDL_CreateWindow(
             "SDL Test",
@@ -78,6 +79,7 @@ public:
             if (e.type == SDL_QUIT) isRunning = false;
         }
 
+        // Fix your timestep! game loop
         uint32_t new_time = SDL_GetTicks();
         const auto frame_time = (new_time - prev_time) / 1000.f;
         accumulator += frame_time;
@@ -114,8 +116,6 @@ public:
             SDL_Delay(dt - frameTime);
         }
 #endif
-
-        draw();
     }
 
     void update(float dt)
@@ -144,15 +144,15 @@ public:
         rect.h = 200;
 
         SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
-        SDL_RenderDrawRect(renderer, &rect);
+        SDL_RenderFillRect(renderer, &rect);
 
         rect.x = (int)posX - 100;
         rect.y = 50 + 30 * std::cos(0.1 * frameNum);
-        rect.w = 20;
-        rect.h = 20;
+        rect.w = 30;
+        rect.h = 30;
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-        SDL_RenderDrawRect(renderer, &rect);
+        SDL_RenderFillRect(renderer, &rect);
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 
@@ -164,7 +164,6 @@ private:
     SDL_Window* window{nullptr};
     SDL_Renderer* renderer{nullptr};
 
-    // Fix your timestep! game loop
     static constexpr float FPS = 60.f;
     static constexpr float dt = 1.f / FPS;
 
