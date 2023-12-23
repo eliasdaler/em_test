@@ -1,10 +1,12 @@
 #include "Game.h"
+#include "SDL_video.h"
 
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -106,9 +108,11 @@ void Game::start()
         "SDL Test",
         SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED,
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+        renderWidth,
+        renderHeight,
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    screenWidth = renderWidth;
+    screenHeight = renderHeight;
 
     if (!window) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
@@ -188,15 +192,6 @@ void Game::loopIteration()
         return;
     }
 
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-        switch (e.type) {
-        case SDL_QUIT:
-            isRunning = false;
-            break;
-        }
-    }
-
 #ifdef __EMSCRIPTEN__
     {
         int w, h;
@@ -206,6 +201,12 @@ void Game::loopIteration()
         if (emscripten_get_fullscreen_status(&e) != EMSCRIPTEN_RESULT_SUCCESS) return;
         handleFullscreenChange(e.isFullscreen, e.screenWidth, e.screenHeight);
     }
+#else
+    // i3 is silly - doesn't send any events on maximize/minimize
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    screenWidth = w;
+    screenHeight = h;
 #endif
 
     // Fix your timestep! game loop
@@ -225,6 +226,22 @@ void Game::loopIteration()
                 if (event.type == SDL_QUIT) {
                     isRunning = false;
                 }
+
+#ifndef __EMSCRIPTEN__
+                switch (event.type) {
+                case SDL_WINDOWEVENT: {
+                    std::cout << event.window.type << std::endl;
+                    switch (event.window.type) {
+                    case SDL_WINDOWEVENT_RESIZED:
+                    case SDL_WINDOWEVENT_SIZE_CHANGED:
+                    case SDL_WINDOWEVENT_MAXIMIZED:
+                        screenWidth = event.window.data1;
+                        screenHeight = event.window.data1;
+                        break;
+                    }
+                }
+                }
+#endif
             }
         }
 
@@ -249,7 +266,16 @@ void Game::update(float dt)
 
 void Game::draw()
 {
-    // Clear screen
+    // clear whole window with black color
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0, 0, screenWidth, screenHeight);
+    glClearColor(0.f, 0.f, 0.f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // setup new draw area
+    doLetterboxing();
+
+    // draw
     glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -260,54 +286,49 @@ void Game::draw()
     SDL_GL_SwapWindow(window);
 }
 
-void Game::handleFullscreenChange(bool isFullscreen, int screenWidth, int screenHeight)
+void Game::handleFullscreenChange(bool isFullscreen, int newScreenWidth, int newScreenHeight)
 {
     this->isFullscreen = isFullscreen;
-    printf("handle fullscreen change!\n");
+    // printf("handle fullscreen change!\n");
 
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
+
     int nw, nh;
     if (isFullscreen) {
-        nw = screenWidth;
-        nh = screenHeight;
+        nw = newScreenWidth;
+        nh = newScreenHeight;
     } else {
-        nw = SCREEN_WIDTH;
-        nh = SCREEN_HEIGHT;
+        nw = renderWidth;
+        nh = renderHeight;
     }
+    screenWidth = nw;
+    screenHeight = nh;
+
     if (w != nw && h != nh) {
-        printf("SDL_SetWindowSize(%d, %d)\n", nw, nh);
-        SDL_SetWindowSize(window, nw, nh);
-    }
-    if (isFullscreen) {
-        doLetterboxing(screenWidth, screenHeight);
-    } else {
-        glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+        SDL_SetWindowSize(window, screenWidth, screenHeight);
     }
 }
 
-void Game::doLetterboxing(int screenWidth, int screenHeight)
+void Game::doLetterboxing()
 {
-    GLfloat vp[4] = {0.0, 0.0, 1.0, 1.0};
+    const float sw = screenWidth;
+    const float sh = screenHeight;
+    const float ratio = (float)renderWidth / (float)renderHeight;
 
-    const auto irx = SCREEN_WIDTH;
-    const auto iry = SCREEN_HEIGHT;
-
-    const auto scale = std::min(screenWidth / irx, screenHeight / iry);
+    // TODO: integer scale mode
 
     // letterboxing
-    float ssx = (float)screenWidth / (irx * scale);
-    float ssy = (float)screenHeight / (iry * scale);
-
-    if (ssx > ssy) { // won't fit horizontally - add vertical bars
-        vp[2] = ssy / ssx;
-        vp[0] = (1.0f - vp[2]) / 2.f; // center horizontally
+    float vp[4] = {0.f, 0.f, sw, sh};
+    if (sw / sh > ratio) { // won't fit horizontally - add vertical bars
+        vp[2] = sh * ratio;
+        vp[0] = (sw - vp[2]) * 0.5f; // center horizontally
     } else { // won'f fit vertically - add horizonal bars
-        vp[3] = ssx / ssy;
-        vp[1] = (1.0f - vp[3]) / 2.0f; // center vertically
+        vp[3] = sw / ratio;
+        vp[1] = (sh - vp[3]) * 0.5f; // center vertically
     }
 
-    // back to pixels
-    glViewport(
-        vp[0] * screenWidth, vp[1] * screenHeight, vp[2] * screenWidth, vp[3] * screenHeight);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(vp[0], vp[1], vp[2], vp[3]);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
 }

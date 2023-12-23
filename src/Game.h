@@ -17,7 +17,7 @@ public:
     void initGeometry();
 
 private:
-    void doLetterboxing(int screenWidth, int screenHeight);
+    void doLetterboxing();
 
     bool isRunning{false};
     SDL_Window* window{nullptr};
@@ -32,10 +32,12 @@ private:
 
     uint32_t prev_time = 0;
 
-    static const int SCREEN_WIDTH = 640;
-    static const int SCREEN_HEIGHT = 480;
+    static const int renderWidth = 640;
+    static const int renderHeight = 480;
 
     bool isFullscreen{false};
+    int screenWidth{0};
+    int screenHeight{0};
 
     std::uint32_t shaderProgram;
     std::uint32_t vao;
