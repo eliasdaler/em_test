@@ -1,7 +1,4 @@
 add_executable(game
-  util/ImageLoader.cpp
-  util/OSUtil.cpp
-
   Game.cpp
   main.cpp
 )
@@ -55,7 +52,6 @@ if(EMSCRIPTEN)
     RUNTIME_OUTPUT_DIRECTORY "${site_dir}"
   )
 
-  set(CMAKE_EXECUTABLE_SUFFIX ".html")
 endif()
 
 # web deploy/publishing

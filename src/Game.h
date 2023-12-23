@@ -27,8 +27,6 @@ private:
     bool moveRight = true;
     float posX = 250;
 
-    float frameNum = 0;
-
     uint32_t prev_time = 0;
 
     static const int SCREEN_WIDTH = 640;

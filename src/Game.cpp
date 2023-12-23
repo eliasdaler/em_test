@@ -4,15 +4,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
 #endif
-
-#include <util/ImageLoader.h>
-#include <util/OSUtil.h>
 
 #ifdef __EMSCRIPTEN__
 EM_BOOL emFullscreenCallback(
@@ -29,9 +25,6 @@ EM_BOOL emFullscreenCallback(
 
 void Game::start()
 {
-#ifndef __EMSCRIPTEN__
-    util::setCurrentDirToExeDir();
-#endif
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         std::exit(1);
@@ -50,32 +43,6 @@ void Game::start()
     }
 
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-
-    { // load texture
-        const auto imageData = util::loadImage("assets/textures/shinji.png");
-        assert(imageData.width != 0);
-
-        constexpr auto rmask = 0x000000FF;
-        constexpr auto gmask = 0x0000FF00;
-        constexpr auto bmask = 0x00FF0000;
-        constexpr auto amask = 0xFF000000;
-        SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(
-            imageData.pixels,
-            imageData.width,
-            imageData.height,
-            32,
-            4 * imageData.width,
-            rmask,
-            gmask,
-            bmask,
-            amask);
-        assert(surface);
-        texture = SDL_CreateTextureFromSurface(renderer, surface);
-
-        assert(texture);
-
-        SDL_FreeSurface(surface);
-    }
 
     prev_time = SDL_GetTicks();
 }
@@ -141,6 +108,7 @@ void Game::loopIteration()
 
         EmscriptenFullscreenChangeEvent e{};
         if (emscripten_get_fullscreen_status(&e) != EMSCRIPTEN_RESULT_SUCCESS) return;
+        // THIS WORKS (comment out handleFullscreenChange in callback)
         // handleFullscreenChange(e.isFullscreen, e.screenWidth, e.screenHeight);
     }
 #endif
@@ -165,10 +133,7 @@ void Game::loopIteration()
             }
         }
 
-        // update
         update(dt);
-
-        frameNum += 1.f;
 
         accumulator -= dt;
     }
@@ -201,16 +166,16 @@ void Game::update(float dt)
 
 void Game::draw()
 {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    // Render texture to screen
     if (!isFullscreen) {
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
     }
+    SDL_RenderClear(renderer);
 
     SDL_Rect rect;
     rect.x = (int)posX;
-    rect.y = 150 + 50 * std::sin(0.1 * frameNum);
+    rect.y = 150;
     rect.w = 200;
     rect.h = 200;
 
@@ -218,7 +183,7 @@ void Game::draw()
     SDL_RenderFillRect(renderer, &rect);
 
     rect.x = (int)posX - 100;
-    rect.y = 50 + 30 * std::cos(0.1 * frameNum);
+    rect.y = 50;
     rect.w = 30;
     rect.h = 30;
 
