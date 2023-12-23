@@ -17,7 +17,6 @@ private:
     SDL_Window* window{nullptr};
 
     SDL_Renderer* renderer{nullptr};
-    SDL_Texture* texture{nullptr};
 
     static constexpr float FPS = 60.f;
     static constexpr float dt = 1.f / FPS;
