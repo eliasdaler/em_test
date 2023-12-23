@@ -21,7 +21,7 @@ EM_BOOL emFullscreenCallback(
     void* userdata)
 {
     auto& game = *static_cast<Game*>(userdata);
-    // game.handleFullscreenChange(e->isFullscreen, e->screenWidth, e->screenHeight);
+    game.handleFullscreenChange(e->isFullscreen, e->screenWidth, e->screenHeight);
 
     return EM_FALSE;
 }
@@ -141,7 +141,7 @@ void Game::loopIteration()
 
         EmscriptenFullscreenChangeEvent e{};
         if (emscripten_get_fullscreen_status(&e) != EMSCRIPTEN_RESULT_SUCCESS) return;
-        handleFullscreenChange(e.isFullscreen, e.screenWidth, e.screenHeight);
+        // handleFullscreenChange(e.isFullscreen, e.screenWidth, e.screenHeight);
     }
 #endif
 
