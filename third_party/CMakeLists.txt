@@ -9,3 +9,12 @@ add_subdirectory(SDL)
 ### stb
 add_subdirectory(stb)
 
+## glad
+if (NOT EMSCRIPTEN)
+add_library(glad STATIC "${CMAKE_CURRENT_LIST_DIR}/glad/src/gl.c")
+target_include_directories(glad PUBLIC "${CMAKE_CURRENT_LIST_DIR}/glad/include")
+add_library(glad::glad ALIAS glad)
+set_target_properties(glad PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+)
+endif()

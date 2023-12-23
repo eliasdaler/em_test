@@ -1,5 +1,7 @@
 #include <SDL.h>
 
+#include <cstdint>
+
 class Game {
 public:
     void start();
@@ -12,12 +14,14 @@ public:
 
     void handleFullscreenChange(bool isFullscreen, int screenWidth, int screenHeight);
 
+    void initGeometry();
+
 private:
     bool isRunning{false};
     SDL_Window* window{nullptr};
+    SDL_GLContext glContext{nullptr};
 
     SDL_Renderer* renderer{nullptr};
-    SDL_Texture* texture{nullptr};
 
     static constexpr float FPS = 60.f;
     static constexpr float dt = 1.f / FPS;
@@ -30,4 +34,8 @@ private:
     static const int SCREEN_HEIGHT = 480;
 
     bool isFullscreen{false};
+
+    std::uint32_t shaderProgram;
+    std::uint32_t vao;
+    std::uint32_t vbo;
 };

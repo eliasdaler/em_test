@@ -1,4 +1,5 @@
 add_executable(game
+  util/GLUtil.cpp
   util/ImageLoader.cpp
   util/OSUtil.cpp
 
@@ -27,6 +28,10 @@ endif()
 if(WIN32)
   target_link_libraries(game PRIVATE SDL2::SDL2main)
 endif() 
+
+if (NOT EMSCRIPTEN)
+  target_link_libraries(game PRIVATE glad::glad)
+endif()
 
 set(assets_dir "${PROJECT_SOURCE_DIR}/assets")
 if (NOT EMSCRIPTEN)
