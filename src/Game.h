@@ -10,6 +10,8 @@ public:
     void update(float dt);
     void draw();
 
+    void handleFullscreenChange(bool isFullscreen, int screenWidth, int screenHeight);
+
 private:
     bool isRunning{false};
     SDL_Window* window{nullptr};
@@ -31,4 +33,6 @@ private:
 
     static const int SCREEN_WIDTH = 640;
     static const int SCREEN_HEIGHT = 480;
+
+    bool isFullscreen{false};
 };

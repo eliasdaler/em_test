@@ -14,32 +14,14 @@
 #include <util/ImageLoader.h>
 #include <util/OSUtil.h>
 
-bool resized = false;
-
-bool triggered = false;
-
 #ifdef __EMSCRIPTEN__
-static EM_BOOL onCanvasSizeChanged(
-    int /* event_type */,
-    const EmscriptenUiEvent* /* ui_event */,
-    void* user_data)
-{
-    double canvas_width, canvas_height;
-    emscripten_get_element_css_size("#canvas", &canvas_width, &canvas_height);
-    printf("new size: %d, %d\n", (int)canvas_width, (int)canvas_height);
-    return false;
-}
-
 EM_BOOL emFullscreenCallback(
     int eventType,
-    const EmscriptenFullscreenChangeEvent* fullscreenChangeEvent,
-    void* userData)
+    const EmscriptenFullscreenChangeEvent* e,
+    void* userdata)
 {
-    triggered = true;
-    printf("FULL SCREEN!\n");
-    if (eventType == EMSCRIPTEN_EVENT_FULLSCREENCHANGE) {
-        return EM_TRUE;
-    }
+    auto& game = *static_cast<Game*>(userdata);
+    // game.handleFullscreenChange(e->isFullscreen, e->screenWidth, e->screenHeight);
 
     return EM_FALSE;
 }
@@ -110,6 +92,10 @@ void Game::loop()
 {
     isRunning = true;
 #ifdef __EMSCRIPTEN__
+    auto res = emscripten_set_fullscreenchange_callback(
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, (void*)this, EM_TRUE, emFullscreenCallback);
+    assert(res != EMSCRIPTEN_RESULT_NOT_SUPPORTED);
+
     emscripten_set_main_loop_arg(
         [](void* userdata) {
             auto* game = static_cast<Game*>(userdata);
@@ -119,16 +105,6 @@ void Game::loop()
         (void*)this,
         0,
         1);
-
-    EMSCRIPTEN_RESULT res;
-
-    res = emscripten_set_resize_callback(
-        EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, EM_TRUE, onCanvasSizeChanged);
-    assert(res != EMSCRIPTEN_RESULT_NOT_SUPPORTED);
-
-    res = emscripten_set_fullscreenchange_callback(
-        EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, EM_TRUE, emFullscreenCallback);
-    assert(res != EMSCRIPTEN_RESULT_NOT_SUPPORTED);
 #else
     while (isRunning) {
         loopIteration();
@@ -159,32 +135,13 @@ void Game::loopIteration()
     }
 
 #ifdef __EMSCRIPTEN__
-    if (resized) {
-        double w, h;
-        emscripten_get_element_css_size("#canvas", &w, &h);
-        printf("size: %d, %d\n", (int)w, (int)h);
-        resized = false;
-    }
-#endif
-
-#ifdef __EMSCRIPTEN__
     {
         int w, h;
         SDL_GetWindowSize(window, &w, &h);
 
         EmscriptenFullscreenChangeEvent e{};
         if (emscripten_get_fullscreen_status(&e) != EMSCRIPTEN_RESULT_SUCCESS) return;
-        int nw, nh;
-        if (e.isFullscreen) {
-            nw = e.screenWidth;
-            nh = e.screenHeight;
-        } else {
-            nw = SCREEN_WIDTH;
-            nh = SCREEN_HEIGHT;
-        }
-        if (w != nw && h != nh) {
-            SDL_SetWindowSize(window, nw, nh);
-        }
+        handleFullscreenChange(e.isFullscreen, e.screenWidth, e.screenHeight);
     }
 #endif
 
@@ -244,16 +201,12 @@ void Game::update(float dt)
 
 void Game::draw()
 {
-    if (triggered) {
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        SDL_RenderClear(renderer);
-        return;
-    }
-
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     // Render texture to screen
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    if (!isFullscreen) {
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+    }
 
     SDL_Rect rect;
     rect.x = (int)posX;
@@ -273,4 +226,25 @@ void Game::draw()
     SDL_RenderFillRect(renderer, &rect);
 
     SDL_RenderPresent(renderer);
+}
+
+void Game::handleFullscreenChange(bool isFullscreen, int screenWidth, int screenHeight)
+{
+    this->isFullscreen = isFullscreen;
+    printf("handle fullscreen change!\n");
+
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    int nw, nh;
+    if (isFullscreen) {
+        nw = screenWidth;
+        nh = screenHeight;
+    } else {
+        nw = SCREEN_WIDTH;
+        nh = SCREEN_HEIGHT;
+    }
+    if (w != nw && h != nh) {
+        printf("SDL_SetWindowSize(%d, %d)\n", nw, nh);
+        SDL_SetWindowSize(window, nw, nh);
+    }
 }
