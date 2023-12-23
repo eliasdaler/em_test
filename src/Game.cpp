@@ -8,10 +8,42 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/html5.h>
 #endif
 
 #include <util/ImageLoader.h>
 #include <util/OSUtil.h>
+
+bool resized = false;
+
+bool triggered = false;
+
+#ifdef __EMSCRIPTEN__
+static EM_BOOL onCanvasSizeChanged(
+    int /* event_type */,
+    const EmscriptenUiEvent* /* ui_event */,
+    void* user_data)
+{
+    double canvas_width, canvas_height;
+    emscripten_get_element_css_size("#canvas", &canvas_width, &canvas_height);
+    printf("new size: %d, %d\n", (int)canvas_width, (int)canvas_height);
+    return false;
+}
+
+EM_BOOL emFullscreenCallback(
+    int eventType,
+    const EmscriptenFullscreenChangeEvent* fullscreenChangeEvent,
+    void* userData)
+{
+    triggered = true;
+    printf("FULL SCREEN!\n");
+    if (eventType == EMSCRIPTEN_EVENT_FULLSCREENCHANGE) {
+        return EM_TRUE;
+    }
+
+    return EM_FALSE;
+}
+#endif
 
 void Game::start()
 {
@@ -29,6 +61,7 @@ void Game::start()
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         SDL_WINDOW_SHOWN);
+
     if (!window) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         std::exit(1);
@@ -86,6 +119,16 @@ void Game::loop()
         (void*)this,
         0,
         1);
+
+    EMSCRIPTEN_RESULT res;
+
+    res = emscripten_set_resize_callback(
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, EM_TRUE, onCanvasSizeChanged);
+    assert(res != EMSCRIPTEN_RESULT_NOT_SUPPORTED);
+
+    res = emscripten_set_fullscreenchange_callback(
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, EM_TRUE, emFullscreenCallback);
+    assert(res != EMSCRIPTEN_RESULT_NOT_SUPPORTED);
 #else
     while (isRunning) {
         loopIteration();
@@ -105,8 +148,45 @@ void Game::loopIteration()
 
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
-        if (e.type == SDL_QUIT) isRunning = false;
+        switch (e.type) {
+        case SDL_QUIT:
+            isRunning = false;
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+            printf("Mouse click\n");
+            break;
+        }
     }
+
+#ifdef __EMSCRIPTEN__
+    if (resized) {
+        double w, h;
+        emscripten_get_element_css_size("#canvas", &w, &h);
+        printf("size: %d, %d\n", (int)w, (int)h);
+        resized = false;
+    }
+#endif
+
+#ifdef __EMSCRIPTEN__
+    {
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+
+        EmscriptenFullscreenChangeEvent e{};
+        if (emscripten_get_fullscreen_status(&e) != EMSCRIPTEN_RESULT_SUCCESS) return;
+        int nw, nh;
+        if (e.isFullscreen) {
+            nw = e.screenWidth;
+            nh = e.screenHeight;
+        } else {
+            nw = SCREEN_WIDTH;
+            nh = SCREEN_HEIGHT;
+        }
+        if (w != nw && h != nh) {
+            SDL_SetWindowSize(window, nw, nh);
+        }
+    }
+#endif
 
     // Fix your timestep! game loop
     uint32_t new_time = SDL_GetTicks();
@@ -164,6 +244,12 @@ void Game::update(float dt)
 
 void Game::draw()
 {
+    if (triggered) {
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        return;
+    }
+
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     // Render texture to screen

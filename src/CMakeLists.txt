@@ -54,6 +54,8 @@ if(EMSCRIPTEN)
     LIBRARY_OUTPUT_DIRECTORY "${site_dir}"
     RUNTIME_OUTPUT_DIRECTORY "${site_dir}"
   )
+
+  set(CMAKE_EXECUTABLE_SUFFIX ".html")
 endif()
 
 # web deploy/publishing

@@ -7,13 +7,27 @@
 </head>
 
 <body>
-    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+    <div id="canvas-container">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+
     <script type='text/javascript'>
         var Module = {
             canvas: (function() { return document.getElementById('canvas'); })()
         };
     </script>
+    
     <script src="game.js"></script>
+
+    <span id='controls'>
+      <span><input type="checkbox" id="resize">Resize canvas</span>
+      <span><input type="checkbox" id="pointerLock" checked>Lock/hide mouse pointer &nbsp;&nbsp;&nbsp;</span>
+      <span><input type="button" value="Fullscreen" onclick="Module.requestFullscreen(document.getElementById('pointerLock').checked, 
+                                                                                document.getElementById('resize').checked)">
+      </span>
+    </span>
+    
 </body>
 
 </html>
