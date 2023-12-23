@@ -24,12 +24,15 @@ namespace
 // Vertex shader
 const GLchar* vertexSource = R"(#version 300 es
 
-in vec4 position; 
-out vec3 color;   
+layout(location=0) in vec3 position; 
+layout(location=1) in vec4 i_color; 
+
+out vec4 color;   
+
 void main()       
 {
     gl_Position = vec4(position.xyz, 1.0);
-    color = gl_Position.xyz + vec3(0.5);   
+    color = i_color;
 }
 )";
 
@@ -37,12 +40,13 @@ void main()
 const GLchar* fragmentSource = R"(#version 300 es
 precision mediump float;
 
-in vec3 color;
-out vec4 FragColor;
+in vec4 color;
+
+layout(location=0) out vec4 FragColor;
 
 void main()
 {
-    FragColor = vec4(color.xyz, 1);
+    FragColor = color;
 } 
 )";
 
@@ -58,7 +62,7 @@ GLuint initShader()
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
     glCompileShader(fragmentShader);
-    util::printShaderErrors(vertexShader);
+    util::printShaderErrors(fragmentShader);
 
     // Link vertex and fragment shader into shader program and use it
     GLuint shaderProgram = glCreateProgram();
@@ -67,6 +71,21 @@ GLuint initShader()
     glLinkProgram(shaderProgram);
     glUseProgram(shaderProgram);
 
+    // check linking status
+    GLint status;
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &status);
+    if (status == GL_FALSE) {
+        std::string msg("Program linking failure: ");
+        std::cerr << "Failed to link program: ";
+
+        GLint logLength;
+        glGetShaderiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
+        std::string log(logLength + 1, '\0');
+        glGetProgramInfoLog(shaderProgram, logLength, NULL, &log[0]);
+        std::cerr << log << std::endl;
+        return 0;
+    }
+
     return shaderProgram;
 }
 
@@ -74,24 +93,38 @@ GLuint initShader()
 
 void Game::initGeometry()
 {
+    // vao
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
+    // vbo
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    /* clang-format off */
-    GLfloat vertices[] = 
-    {
-        0.0f, 0.5f, 0.0f,
-        -0.5f, -0.5f, 0.0f,
-        0.5f, -0.5f, 0.0f
-    };
-    /* clang-format on */
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    GLint posAttrib = glGetAttribLocation(shaderProgram, "position");
-    glEnableVertexAttribArray(posAttrib);
-    glVertexAttribPointer(posAttrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    struct Vertex {
+        float pos[3];
+        float color[4];
+    };
+    Vertex vertices[] = {
+        {.pos = {-0.5f, -0.5f, 0.f}, .color = {1.f, 0.f, 0.f, 1.f}},
+        {.pos = {0.5f, -0.5f, 0.f}, .color = {0.f, 1.f, 0.f, 1.f}},
+        {.pos = {0.5f, 0.5f, 0.f}, .color = {0.f, 0.f, 1.f, 1.f}},
+        {.pos = {-0.5f, 0.5f, 0.f}, .color = {1.f, 0.f, 1.f, 1.f}},
+    };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * 4, vertices, GL_STATIC_DRAW);
+
+    // ebo
+    GLushort indices[] = {0, 1, 2, 2, 3, 0};
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    // specify vertex layout
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+    glEnableVertexAttribArray(1);
 }
 
 void Game::start()
@@ -230,7 +263,6 @@ void Game::loopIteration()
 #ifndef __EMSCRIPTEN__
                 switch (event.type) {
                 case SDL_WINDOWEVENT: {
-                    std::cout << event.window.type << std::endl;
                     switch (event.window.type) {
                     case SDL_WINDOWEVENT_RESIZED:
                     case SDL_WINDOWEVENT_SIZE_CHANGED:
@@ -281,7 +313,7 @@ void Game::draw()
 
     glUseProgram(shaderProgram);
     glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 
     SDL_GL_SwapWindow(window);
 }
