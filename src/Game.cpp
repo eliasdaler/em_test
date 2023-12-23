@@ -6,6 +6,12 @@
 #include <cstdlib>
 #include <filesystem>
 
+#include <iostream>
+#include <regex>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
@@ -13,6 +19,140 @@
 
 #include <util/ImageLoader.h>
 #include <util/OSUtil.h>
+
+#include <SDL_opengles2.h>
+
+namespace
+{
+// Vertex shader
+const GLchar* vertexSource = R"(#version 300 es
+
+in vec4 position; 
+out vec3 color;   
+void main()       
+{
+    gl_Position = vec4(position.xyz, 1.0);
+    color = gl_Position.xyz + vec3(0.5);   
+}
+)";
+
+// Fragment shader
+const GLchar* fragmentSource = R"(#version 300 es
+precision mediump float;
+
+in vec3 color;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vec4(color.xyz, 1);
+} 
+)";
+
+std::pair<int, int> getErrorStringNumber(const std::string& errorLog)
+{
+    static const auto r = std::regex("\\d:(\\d+)\\((\\d+\\)).*");
+    std::smatch match;
+    if (std::regex_search(errorLog, match, r)) {
+        assert(match.size() == 3);
+        int lineNum{};
+        std::istringstream(match[1].str()) >> lineNum;
+        int charNum{};
+        std::istringstream(match[2].str()) >> charNum;
+        return {lineNum, charNum};
+    }
+    return {-1, -1};
+}
+
+void checkShader(GLuint object)
+{
+    GLint status;
+    std::string str;
+    glGetShaderiv(object, GL_COMPILE_STATUS, &status);
+    if (status != GL_FALSE) {
+        return;
+    }
+
+    std::cerr << "Failed to compile shader: ";
+
+    GLint logLength;
+    glGetShaderiv(object, GL_INFO_LOG_LENGTH, &logLength);
+    std::string log(logLength + 1, '\0');
+    glGetShaderInfoLog(object, logLength, NULL, &log[0]);
+
+    std::vector<std::string> lines;
+    {
+        std::stringstream ss(str);
+        std::string line;
+        while (std::getline(ss, line, '\n')) {
+            lines.push_back(line);
+        }
+    }
+    int lineNum = 1;
+    std::stringstream ss(log);
+    std::string line;
+    while (std::getline(ss, line, '\n')) {
+        auto [errorLineNum, charNum] = getErrorStringNumber(line);
+        if (errorLineNum != -1) {
+            std::cerr << line << std::endl;
+            std::cerr << "> " << lines[errorLineNum - 1] << std::endl;
+            for (int i = 0; i < charNum + 4; ++i) {
+                std::cerr << " ";
+            }
+            std::cerr << "^~\n";
+            break;
+        } else {
+            std::cerr << line << std::endl;
+        }
+    }
+}
+
+GLuint initShader()
+{
+    // Create and compile vertex shader
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexSource, NULL);
+    glCompileShader(vertexShader);
+    checkShader(vertexShader);
+
+    // Create and compile fragment shader
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+    glCompileShader(fragmentShader);
+    checkShader(fragmentShader);
+
+    // Link vertex and fragment shader into shader program and use it
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+    glUseProgram(shaderProgram);
+
+    return shaderProgram;
+}
+
+void initGeometry(GLuint shaderProgram)
+{
+    // Create vertex buffer object and copy vertex data into it
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    /* clang-format off */
+    GLfloat vertices[] = 
+    {
+        0.0f, 0.5f, 0.0f,
+        -0.5f, -0.5f, 0.0f,
+        0.5f, -0.5f, 0.0f
+    };
+    /* clang-format on */
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    // Specify the layout of the shader vertex data (positions only, 3 floats)
+    GLint posAttrib = glGetAttribLocation(shaderProgram, "position");
+    glEnableVertexAttribArray(posAttrib);
+    glVertexAttribPointer(posAttrib, 3, GL_FLOAT, GL_FALSE, 0, 0);
+}
+}
 
 #ifdef __EMSCRIPTEN__
 EM_BOOL emFullscreenCallback(
@@ -42,40 +182,31 @@ void Game::start()
         SDL_WINDOWPOS_UNDEFINED,
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
-        SDL_WINDOW_SHOWN);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
 
     if (!window) {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
         std::exit(1);
     }
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // Create OpenGLES 2 context on SDL window
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GLContext glc = SDL_GL_CreateContext(window);
+
+    // Set clear color to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
     { // load texture
         const auto imageData = util::loadImage("assets/textures/shinji.png");
         assert(imageData.width != 0);
-
-        constexpr auto rmask = 0x000000FF;
-        constexpr auto gmask = 0x0000FF00;
-        constexpr auto bmask = 0x00FF0000;
-        constexpr auto amask = 0xFF000000;
-        SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(
-            imageData.pixels,
-            imageData.width,
-            imageData.height,
-            32,
-            4 * imageData.width,
-            rmask,
-            gmask,
-            bmask,
-            amask);
-        assert(surface);
-        texture = SDL_CreateTextureFromSurface(renderer, surface);
-
-        assert(texture);
-
-        SDL_FreeSurface(surface);
     }
+
+    GLuint shaderProgram = initShader();
+    initGeometry(shaderProgram);
 
     prev_time = SDL_GetTicks();
 }
@@ -83,7 +214,6 @@ void Game::start()
 void Game::onQuit()
 {
     SDL_DestroyTexture(texture);
-    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
 }
@@ -165,10 +295,7 @@ void Game::loopIteration()
             }
         }
 
-        // update
         update(dt);
-
-        frameNum += 1.f;
 
         accumulator -= dt;
     }
@@ -185,47 +312,15 @@ void Game::loopIteration()
 }
 
 void Game::update(float dt)
-{
-    float speed = 100;
-    if (moveRight) {
-        posX += speed * dt;
-    } else {
-        posX -= speed * dt;
-    }
-    if (posX > 400) {
-        moveRight = false;
-    } else if (posX < 200) {
-        moveRight = true;
-    }
-}
+{}
 
 void Game::draw()
 {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    // Render texture to screen
-    if (!isFullscreen) {
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-    }
+    // Clear screen
+    glClear(GL_COLOR_BUFFER_BIT);
 
-    SDL_Rect rect;
-    rect.x = (int)posX;
-    rect.y = 150 + 50 * std::sin(0.1 * frameNum);
-    rect.w = 200;
-    rect.h = 200;
-
-    SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
-    SDL_RenderFillRect(renderer, &rect);
-
-    rect.x = (int)posX - 100;
-    rect.y = 50 + 30 * std::cos(0.1 * frameNum);
-    rect.w = 30;
-    rect.h = 30;
-
-    SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-    SDL_RenderFillRect(renderer, &rect);
-
-    SDL_RenderPresent(renderer);
+    // Draw the vertex buffer
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 }
 
 void Game::handleFullscreenChange(bool isFullscreen, int screenWidth, int screenHeight)
