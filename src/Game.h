@@ -17,6 +17,8 @@ public:
     void initGeometry();
 
 private:
+    void doLetterboxing(int screenWidth, int screenHeight);
+
     bool isRunning{false};
     SDL_Window* window{nullptr};
     SDL_GLContext glContext{nullptr};

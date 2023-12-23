@@ -101,6 +101,7 @@ void Game::start()
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         std::exit(1);
     }
+
     window = SDL_CreateWindow(
         "SDL Test",
         SDL_WINDOWPOS_UNDEFINED,
@@ -193,9 +194,6 @@ void Game::loopIteration()
         case SDL_QUIT:
             isRunning = false;
             break;
-        case SDL_MOUSEBUTTONDOWN:
-            printf("Mouse click\n");
-            break;
         }
     }
 
@@ -252,7 +250,7 @@ void Game::update(float dt)
 void Game::draw()
 {
     // Clear screen
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(shaderProgram);
@@ -281,4 +279,35 @@ void Game::handleFullscreenChange(bool isFullscreen, int screenWidth, int screen
         printf("SDL_SetWindowSize(%d, %d)\n", nw, nh);
         SDL_SetWindowSize(window, nw, nh);
     }
+    if (isFullscreen) {
+        doLetterboxing(screenWidth, screenHeight);
+    } else {
+        glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    }
+}
+
+void Game::doLetterboxing(int screenWidth, int screenHeight)
+{
+    GLfloat vp[4] = {0.0, 0.0, 1.0, 1.0};
+
+    const auto irx = SCREEN_WIDTH;
+    const auto iry = SCREEN_HEIGHT;
+
+    const auto scale = std::min(screenWidth / irx, screenHeight / iry);
+
+    // letterboxing
+    float ssx = (float)screenWidth / (irx * scale);
+    float ssy = (float)screenHeight / (iry * scale);
+
+    if (ssx > ssy) { // won't fit horizontally - add vertical bars
+        vp[2] = ssy / ssx;
+        vp[0] = (1.0f - vp[2]) / 2.f; // center horizontally
+    } else { // won'f fit vertically - add horizonal bars
+        vp[3] = ssx / ssy;
+        vp[1] = (1.0f - vp[3]) / 2.0f; // center vertically
+    }
+
+    // back to pixels
+    glViewport(
+        vp[0] * screenWidth, vp[1] * screenHeight, vp[2] * screenWidth, vp[3] * screenHeight);
 }
