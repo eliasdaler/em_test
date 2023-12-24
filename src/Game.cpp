@@ -274,7 +274,7 @@ void Game::start()
 
     // init camera
     {
-        cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+        cameraPos = glm::vec3(0.0f, 1.0f, 3.0f);
         glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
         cameraDirection = glm::normalize(cameraPos - cameraTarget);
 
@@ -415,7 +415,7 @@ void Game::draw()
     glDisable(GL_SCISSOR_TEST);
     glViewport(0, 0, screenWidth, screenHeight);
     glClearColor(0.f, 0.f, 0.f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // setup new draw area
     doLetterboxing();
@@ -423,24 +423,25 @@ void Game::draw()
     // draw
     glEnable(GL_CULL_FACE);
     glFrontFace(GL_CCW);
+    glCullFace(GL_BACK);
 
     glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(shaderProgram);
 
-    auto vp = cameraProj * cameraView;
-    // vp = glm::mat4{1.f};
-
     // draw BG
+    glDisable(GL_DEPTH_TEST);
     glm::mat4 spriteTransform{1.f};
-    shaderSetUniformMatrix(shaderProgram, "vp", 0, vp);
+    shaderSetUniformMatrix(shaderProgram, "vp", 0, glm::mat4{1.f});
     shaderSetUniformMatrix(shaderProgram, "model", 1, spriteTransform);
     shaderBindSampler(shaderProgram, "tex", 2, 0, texture, sampler);
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 
     // draw model
+    auto vp = cameraProj * cameraView;
+    glEnable(GL_DEPTH_TEST);
     glm::mat4 meshTransform{1.f};
     meshTransform = glm::rotate(meshTransform, meshRotationAngle, glm::vec3{0.f, 1.f, 0.f});
     const auto& mesh = model.meshes[0];
