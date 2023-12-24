@@ -28,5 +28,5 @@ struct ImageData {
 
 namespace util
 {
-ImageData loadImage(const std::filesystem::path& p);
+ImageData loadImage(const std::filesystem::path& p, bool flipOnLoad = true);
 }

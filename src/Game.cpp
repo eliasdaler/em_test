@@ -24,15 +24,18 @@ namespace
 // Vertex shader
 const GLchar* vertexSource = R"(#version 300 es
 
-layout(location=0) in vec3 position; 
-layout(location=1) in vec4 i_color; 
+layout(location=0) in vec3 a_position; 
+layout(location=1) in vec4 a_color; 
+layout(location=2) in vec2 a_uv; 
 
 out vec4 color;   
+out vec2 uv;   
 
 void main()       
 {
-    gl_Position = vec4(position.xyz, 1.0);
-    color = i_color;
+    gl_Position = vec4(a_position, 1.0);
+    color = a_color;
+    uv = a_uv;
 }
 )";
 
@@ -41,52 +44,79 @@ const GLchar* fragmentSource = R"(#version 300 es
 precision mediump float;
 
 in vec4 color;
+in vec2 uv;
 
 layout(location=0) out vec4 FragColor;
 
+uniform sampler2D tex;
+
 void main()
 {
-    FragColor = color;
+    vec4 col = texture(tex, uv);
+
+    // Mom: we have sRGB at home:
+    FragColor = pow(col, vec4(1.f / 2.2f));
 } 
 )";
 
-GLuint initShader()
+std::uint32_t loadShader(const char* vertexSource, const char* fragmentSource)
 {
-    // Create and compile vertex shader
+    // vertex
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexSource, NULL);
     glCompileShader(vertexShader);
-    util::printShaderErrors(vertexShader);
+    bool ok = util::printShaderCompilationErrors(vertexShader, vertexSource);
+    assert(ok);
 
-    // Create and compile fragment shader
+    // fragment
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
     glCompileShader(fragmentShader);
-    util::printShaderErrors(fragmentShader);
+    ok = util::printShaderCompilationErrors(fragmentShader, fragmentSource);
+    assert(ok);
 
-    // Link vertex and fragment shader into shader program and use it
+    // link
     GLuint shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram, vertexShader);
     glAttachShader(shaderProgram, fragmentShader);
     glLinkProgram(shaderProgram);
-    glUseProgram(shaderProgram);
 
     // check linking status
-    GLint status;
-    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &status);
-    if (status == GL_FALSE) {
-        std::string msg("Program linking failure: ");
-        std::cerr << "Failed to link program: ";
+    ok = util::printShaderLinkErrors(shaderProgram);
+    assert(ok);
 
-        GLint logLength;
-        glGetShaderiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
-        std::string log(logLength + 1, '\0');
-        glGetProgramInfoLog(shaderProgram, logLength, NULL, &log[0]);
-        std::cerr << log << std::endl;
-        return 0;
-    }
+    // detach and clean-up
+    glDetachShader(shaderProgram, vertexShader);
+    glDetachShader(shaderProgram, fragmentShader);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
 
     return shaderProgram;
+}
+
+std::uint32_t loadTexture(const char* path)
+{
+    const auto imageData = util::loadImage("assets/textures/shinji.png");
+    assert(imageData.pixels);
+    assert(imageData.channels == 4);
+
+    GLuint texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glTexImage2D(
+        GL_TEXTURE_2D, // target
+        0, // no mipmap
+        GL_SRGB8_ALPHA8, // internalformat
+        imageData.width, // width
+        imageData.height, // height
+        0, // border
+        GL_RGBA, // format
+        GL_UNSIGNED_BYTE, // type
+        imageData.pixels // pixels
+    );
+
+    return texture;
 }
 
 }
@@ -103,13 +133,14 @@ void Game::initGeometry()
 
     struct Vertex {
         float pos[3];
-        float color[4];
+        std::uint8_t color[4];
+        float uv[2];
     };
     Vertex vertices[] = {
-        {.pos = {-0.5f, -0.5f, 0.f}, .color = {1.f, 0.f, 0.f, 1.f}},
-        {.pos = {0.5f, -0.5f, 0.f}, .color = {0.f, 1.f, 0.f, 1.f}},
-        {.pos = {0.5f, 0.5f, 0.f}, .color = {0.f, 0.f, 1.f, 1.f}},
-        {.pos = {-0.5f, 0.5f, 0.f}, .color = {1.f, 0.f, 1.f, 1.f}},
+        {.pos = {-0.5f, -0.5f, 0.f}, .color = {255, 0, 0, 255}, .uv = {0.f, 0.f}},
+        {.pos = {0.5f, -0.5f, 0.f}, .color = {0, 255, 0, 255}, .uv = {1.f, 0.f}},
+        {.pos = {0.5f, 0.5f, 0.f}, .color = {0, 0, 255, 255}, .uv = {1.f, 1.f}},
+        {.pos = {-0.5f, 0.5f, 0.f}, .color = {255, 0, 255, 255}, .uv = {0.f, 1.f}},
     };
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * 4, vertices, GL_STATIC_DRAW);
 
@@ -123,8 +154,12 @@ void Game::initGeometry()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+    glVertexAttribPointer(
+        1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
     glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+    glEnableVertexAttribArray(2);
 }
 
 void Game::start()
@@ -177,12 +212,15 @@ void Game::start()
 
     SDL_GL_MakeCurrent(window, glContext);
 
-    { // load texture
-      // const auto imageData = util::loadImage("assets/textures/shinji.png");
-      // assert(imageData.width != 0);
-    }
+    texture = loadTexture("assets/textures/shinji.png");
 
-    shaderProgram = initShader();
+    glGenSamplers(1, &sampler);
+    glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    shaderProgram = loadShader(vertexSource, fragmentSource);
     initGeometry();
 
     prev_time = SDL_GetTicks();
@@ -190,6 +228,13 @@ void Game::start()
 
 void Game::onQuit()
 {
+    glDeleteSamplers(1, &sampler);
+    glDeleteTextures(1, &texture);
+    glDeleteProgram(shaderProgram);
+    glDeleteBuffers(1, &vao);
+    glDeleteBuffers(1, &vbo);
+    glDeleteBuffers(1, &ebo);
+
     SDL_GL_DeleteContext(glContext);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -312,6 +357,17 @@ void Game::draw()
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(shaderProgram);
+
+    // bind texture
+    const GLuint unit = 0;
+
+    auto loc = glGetUniformLocation(shaderProgram, "tex");
+    glUniform1i(loc, unit);
+    glBindSampler(unit, sampler);
+
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 

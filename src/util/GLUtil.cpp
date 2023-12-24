@@ -29,13 +29,12 @@ std::pair<int, int> getErrorStringNumber(const std::string& errorLog)
 
 namespace util
 {
-void printShaderErrors(std::uint32_t shaderObject)
+bool printShaderCompilationErrors(std::uint32_t shaderObject, const std::string& shaderSource)
 {
     GLint status;
-    std::string str;
     glGetShaderiv(shaderObject, GL_COMPILE_STATUS, &status);
-    if (status != GL_FALSE) {
-        return;
+    if (status == GL_TRUE) {
+        return true;
     }
 
     std::cerr << "Failed to compile shader: ";
@@ -47,7 +46,7 @@ void printShaderErrors(std::uint32_t shaderObject)
 
     std::vector<std::string> lines;
     {
-        std::stringstream ss(str);
+        std::stringstream ss(shaderSource);
         std::string line;
         while (std::getline(ss, line, '\n')) {
             lines.push_back(line);
@@ -70,6 +69,27 @@ void printShaderErrors(std::uint32_t shaderObject)
             std::cerr << line << std::endl;
         }
     }
+    return false;
+}
+
+bool printShaderLinkErrors(std::uint32_t shaderProgram)
+{
+    GLint status;
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &status);
+    if (status == GL_TRUE) {
+        return true;
+    }
+
+    std::string msg("Program linking failure: ");
+    std::cerr << "Failed to link program: ";
+
+    GLint logLength;
+    glGetShaderiv(shaderProgram, GL_INFO_LOG_LENGTH, &logLength);
+    std::cout << logLength << std::endl;
+    std::string log(logLength + 1, '\0');
+    glGetProgramInfoLog(shaderProgram, logLength, NULL, &log[0]);
+    std::cerr << log << std::endl;
+    return false;
 }
 
 }
