@@ -50,6 +50,7 @@ target_link_libraries(game PRIVATE
   glm::glm
   stb::image
   tinygltf::tinygltf
+  imgui::imgui
 )
 
 target_compile_definitions(game

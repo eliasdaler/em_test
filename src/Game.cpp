@@ -27,6 +27,10 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/mat4x4.hpp>
 
+#include <imgui.h>
+#include <imgui_impl_opengl3.h>
+#include <imgui_impl_sdl2.h>
+
 namespace
 {
 std::string readFileIntoString(const std::filesystem::path& path)
@@ -246,6 +250,21 @@ void Game::start()
 
     SDL_GL_MakeCurrent(window, glContext);
 
+    { // Dear ImGui init
+        ImGui::CreateContext();
+        ImGui_ImplSDL2_InitForOpenGL(window, glContext);
+#ifdef __EMSCRIPTEN__
+        const char* glsl_version = "#version 300 es";
+#else
+        const char* glsl_version = "#version 330 core";
+#endif
+        ImGui_ImplOpenGL3_Init(glsl_version);
+        auto& io = ImGui::GetIO();
+        io.ConfigWindowsMoveFromTitleBarOnly = true;
+    }
+
+    ///
+
     texture = loadTexture("assets/textures/shinji.png");
 
     glGenSamplers(1, &sampler);
@@ -385,12 +404,20 @@ void Game::loopIteration()
                 }
                 }
 #endif
+
+                ImGui_ImplSDL2_ProcessEvent(&event);
             }
         }
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
 
         update(dt);
 
         accumulator -= dt;
+
+        ImGui::Render();
     }
 
     draw();
@@ -407,6 +434,14 @@ void Game::loopIteration()
 void Game::update(float dt)
 {
     meshRotationAngle += 0.5f * dt;
+
+    ImGui::Begin("Test window");
+    ImGui::TextUnformatted("Emscripten tests");
+    ImGui::Text("screen size: %d, %d", screenWidth, screenHeight);
+    int w, h;
+    SDL_GetWindowSize(window, &w, &h);
+    ImGui::Text("window size: %d, %d", w, h);
+    ImGui::End();
 }
 
 void Game::draw()
@@ -450,6 +485,8 @@ void Game::draw()
     shaderBindSampler(shaderProgram, "tex", 2, 0, mesh.diffuseTexture, sampler);
     glBindVertexArray(mesh.vao);
     glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_SHORT, 0);
+
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     SDL_GL_SwapWindow(window);
 }
