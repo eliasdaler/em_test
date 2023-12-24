@@ -13,9 +13,8 @@ namespace util
 {
 ImageData loadImage(const std::filesystem::path& p, bool flipOnLoad)
 {
-    if (flipOnLoad) {
-        stbi_set_flip_vertically_on_load(flipOnLoad);
-    }
+    stbi_set_flip_vertically_on_load(flipOnLoad);
+
     ImageData data;
     if (stbi_is_hdr(p.string().c_str())) {
         data.hdr = true;

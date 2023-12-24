@@ -2,6 +2,10 @@
 
 #include <cstdint>
 
+#include <Graphics/Model.h>
+
+#include <glm/mat4x4.hpp>
+
 class Game {
 public:
     void start();
@@ -46,4 +50,13 @@ private:
 
     std::uint32_t texture;
     std::uint32_t sampler;
+
+    Model model;
+
+    glm::vec3 cameraPos;
+    glm::vec3 cameraDirection;
+    glm::mat4 cameraView;
+    glm::mat4 cameraProj;
+
+    float meshRotationAngle{0.f};
 };

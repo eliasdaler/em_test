@@ -1,5 +1,8 @@
 add_executable(game
+  Graphics/Mesh.cpp
+
   util/GLUtil.cpp
+  util/GltfLoader.cpp
   util/ImageLoader.cpp
   util/OSUtil.cpp
 
@@ -43,12 +46,24 @@ if (NOT EMSCRIPTEN)
   add_dependencies(game copy_assets)
 endif()
 
-target_link_libraries(game PRIVATE stb::image)
+target_link_libraries(game PRIVATE 
+  glm::glm
+  stb::image
+  tinygltf::tinygltf
+)
+
+target_compile_definitions(game
+  PUBLIC
+    GLM_FORCE_CTOR_INIT
+    GLM_FORCE_XYZW_ONLY
+    GLM_FORCE_EXPLICIT_CTOR
+)
 
 if(EMSCRIPTEN)
   target_link_options(game PRIVATE
     "SHELL:-s GL_ENABLE_GET_PROC_ADDRESS"
     "SHELL:-s MIN_WEBGL_VERSION=2"
+    "SHELL:-s GL_EXPLICIT_UNIFORM_LOCATION=1"
     "SHELL:--preload-file ${assets_dir}@/assets"
   )
 

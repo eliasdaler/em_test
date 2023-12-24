@@ -1,63 +1,49 @@
 #include "Game.h"
 #include "SDL_video.h"
+#include "glm/ext/matrix_transform.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
 #endif
 
+#include <Graphics/Model.h>
 #include <util/GLUtil.h>
+#include <util/GltfLoader.h>
 #include <util/ImageLoader.h>
 #include <util/OSUtil.h>
 
 #include <Platform/gl.h>
 
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/mat4x4.hpp>
+
 namespace
 {
-// Vertex shader
-const GLchar* vertexSource = R"(#version 300 es
-
-layout(location=0) in vec3 a_position; 
-layout(location=1) in vec4 a_color; 
-layout(location=2) in vec2 a_uv; 
-
-out vec4 color;   
-out vec2 uv;   
-
-void main()       
+std::string readFileIntoString(const std::filesystem::path& path)
 {
-    gl_Position = vec4(a_position, 1.0);
-    color = a_color;
-    uv = a_uv;
+    // open file
+    std::ifstream f;
+    f.open(path, std::ios::in | std::ios::binary);
+    if (!f.good()) {
+        std::cerr << "Failed to open file from " << path << " (file not found?)" << std::endl;
+        assert(false);
+    }
+
+    // read whole file into string buffer
+    std::stringstream buffer;
+    buffer << f.rdbuf();
+    return buffer.str();
 }
-)";
-
-// Fragment shader
-const GLchar* fragmentSource = R"(#version 300 es
-precision mediump float;
-
-in vec4 color;
-in vec2 uv;
-
-layout(location=0) out vec4 FragColor;
-
-uniform sampler2D tex;
-
-void main()
-{
-    vec4 col = texture(tex, uv);
-
-    // Mom: we have sRGB at home:
-    FragColor = pow(col, vec4(1.f / 2.2f));
-} 
-)";
 
 std::uint32_t loadShader(const char* vertexSource, const char* fragmentSource)
 {
@@ -94,10 +80,42 @@ std::uint32_t loadShader(const char* vertexSource, const char* fragmentSource)
     return shaderProgram;
 }
 
-std::uint32_t loadTexture(const char* path)
+void shaderBindSampler(
+    std::uint32_t shaderProgram,
+    const char* uniformName,
+    GLuint uniformLoc,
+    GLuint unit,
+    std::uint32_t texture,
+    std::uint32_t sampler)
 {
-    const auto imageData = util::loadImage("assets/textures/shinji.png");
-    assert(imageData.pixels);
+    auto loc = glGetUniformLocation(shaderProgram, uniformName);
+    glUniform1i(loc, unit);
+    glBindSampler(unit, sampler);
+    assert(loc == uniformLoc);
+
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, texture);
+}
+
+void shaderSetUniformMatrix(
+    std::uint32_t shaderProgram,
+    const char* uniformName,
+    GLuint uniformLoc,
+    const glm::mat4& m)
+{
+    auto loc = glGetUniformLocation(shaderProgram, uniformName);
+    assert(loc == uniformLoc);
+
+    glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(m));
+}
+
+std::uint32_t loadTexture(const char* path, bool flipped = true)
+{
+    const auto imageData = util::loadImage(path, flipped);
+    if (!imageData.pixels) {
+        printf("Failed to load image '%s'\n", path);
+        assert(false);
+    }
     assert(imageData.channels == 4);
 
     GLuint texture;
@@ -133,14 +151,30 @@ void Game::initGeometry()
 
     struct Vertex {
         float pos[3];
-        std::uint8_t color[4];
         float uv[2];
+        std::uint8_t color[4];
     };
     Vertex vertices[] = {
-        {.pos = {-0.5f, -0.5f, 0.f}, .color = {255, 0, 0, 255}, .uv = {0.f, 0.f}},
-        {.pos = {0.5f, -0.5f, 0.f}, .color = {0, 255, 0, 255}, .uv = {1.f, 0.f}},
-        {.pos = {0.5f, 0.5f, 0.f}, .color = {0, 0, 255, 255}, .uv = {1.f, 1.f}},
-        {.pos = {-0.5f, 0.5f, 0.f}, .color = {255, 0, 255, 255}, .uv = {0.f, 1.f}},
+        {
+            .pos = {-0.5f, -0.5f, 0.f},
+            .uv = {0.f, 0.f},
+            .color = {255, 0, 0, 255},
+        },
+        {
+            .pos = {0.5f, -0.5f, 0.f},
+            .uv = {1.f, 0.f},
+            .color = {0, 255, 0, 255},
+        },
+        {
+            .pos = {0.5f, 0.5f, 0.f},
+            .uv = {1.f, 1.f},
+            .color = {0, 0, 255, 255},
+        },
+        {
+            .pos = {-0.5f, 0.5f, 0.f},
+            .uv = {0.f, 1.f},
+            .color = {255, 0, 255, 255},
+        },
     };
     glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex) * 4, vertices, GL_STATIC_DRAW);
 
@@ -154,11 +188,11 @@ void Game::initGeometry()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(
-        1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
     glEnableVertexAttribArray(1);
 
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+    glVertexAttribPointer(
+        2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
     glEnableVertexAttribArray(2);
 }
 
@@ -220,8 +254,40 @@ void Game::start()
     glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    shaderProgram = loadShader(vertexSource, fragmentSource);
+#ifdef __EMSCRIPTEN__
+    const auto vertexSource = readFileIntoString("assets/shaders/sprite.vert.glsl");
+    const auto fragmentSource = readFileIntoString("assets/shaders/sprite.frag.glsl");
+#else
+    const auto vertexSource = readFileIntoString("assets/shaders/sprite_desktop.vert.glsl");
+    const auto fragmentSource = readFileIntoString("assets/shaders/sprite_desktop.frag.glsl");
+#endif
+
+    shaderProgram = loadShader(vertexSource.c_str(), fragmentSource.c_str());
     initGeometry();
+
+    model = util::loadModel("assets/models/yae.gltf");
+    // let's assume one mesh for now
+    assert(model.meshes.size() == 1);
+    auto& mesh = model.meshes[0];
+    mesh.initGeometry();
+    mesh.diffuseTexture = loadTexture(mesh.materialPath.c_str(), false);
+
+    // init camera
+    {
+        cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+        glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+        cameraDirection = glm::normalize(cameraPos - cameraTarget);
+
+        glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::vec3 cameraRight = glm::normalize(glm::cross(up, cameraDirection));
+        glm::vec3 cameraUp = glm::cross(cameraDirection, cameraRight);
+
+        cameraView = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), cameraUp);
+
+        const auto fov = 45.f;
+        const auto aspect = (float)renderWidth / (float)renderHeight;
+        cameraProj = glm::perspective(glm::radians(fov), aspect, 0.1f, 100.0f);
+    }
 
     prev_time = SDL_GetTicks();
 }
@@ -339,7 +405,9 @@ void Game::loopIteration()
 }
 
 void Game::update(float dt)
-{}
+{
+    meshRotationAngle += 0.5f * dt;
+}
 
 void Game::draw()
 {
@@ -353,23 +421,34 @@ void Game::draw()
     doLetterboxing();
 
     // draw
+    glEnable(GL_CULL_FACE);
+    glFrontFace(GL_CCW);
+
     glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(shaderProgram);
 
-    // bind texture
-    const GLuint unit = 0;
+    auto vp = cameraProj * cameraView;
+    // vp = glm::mat4{1.f};
 
-    auto loc = glGetUniformLocation(shaderProgram, "tex");
-    glUniform1i(loc, unit);
-    glBindSampler(unit, sampler);
-
-    glActiveTexture(GL_TEXTURE0 + unit);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
+    // draw BG
+    glm::mat4 spriteTransform{1.f};
+    shaderSetUniformMatrix(shaderProgram, "vp", 0, vp);
+    shaderSetUniformMatrix(shaderProgram, "model", 1, spriteTransform);
+    shaderBindSampler(shaderProgram, "tex", 2, 0, texture, sampler);
     glBindVertexArray(vao);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+
+    // draw model
+    glm::mat4 meshTransform{1.f};
+    meshTransform = glm::rotate(meshTransform, meshRotationAngle, glm::vec3{0.f, 1.f, 0.f});
+    const auto& mesh = model.meshes[0];
+    shaderSetUniformMatrix(shaderProgram, "vp", 0, vp);
+    shaderSetUniformMatrix(shaderProgram, "model", 1, meshTransform);
+    shaderBindSampler(shaderProgram, "tex", 2, 0, mesh.diffuseTexture, sampler);
+    glBindVertexArray(mesh.vao);
+    glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_SHORT, 0);
 
     SDL_GL_SwapWindow(window);
 }
